@@ -21,6 +21,8 @@ class EEGParser:
         self.raw_index = 0
         self.raw_activity = 0
         self.last_raw = 0
+        self.raw_baseline = 0
+        self.raw_baseline_ready = False
         self.has_eeg_power = False
 
         self.data = {
@@ -109,14 +111,25 @@ class EEGParser:
 
     def _raw_to_visual(self, value):
         """
-        Escala raw signed 16-bit a un rango util para el canvas actual.
-        El valor raw real se conserva por separado en raw.Fp1Raw.
+        Convierte raw signed 16-bit a una senal visible para el canvas.
+
+        El paquete 0x80 puede traer una componente DC grande o valores muy
+        pequenos. Para depuracion visual se centra con una linea base lenta y
+        se aplica ganancia agresiva. El raw real queda intacto en Fp1Raw.
         """
-        visual = value // 32
-        if visual > 120:
-            return 120
-        if visual < -120:
-            return -120
+        if not self.raw_baseline_ready:
+            self.raw_baseline = value
+            self.raw_baseline_ready = True
+
+        self.raw_baseline = ((self.raw_baseline * 31) + value) // 32
+        centered = value - self.raw_baseline
+
+        visual = centered * 4
+
+        if visual > 130:
+            return 130
+        if visual < -130:
+            return -130
         return visual
 
     def _append_raw(self, value):
