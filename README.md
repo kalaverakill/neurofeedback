@@ -1,209 +1,217 @@
-# Real-Time Neurofeedback EEG System on ESP32
+# Sistema EEG de Neurofeedback en Tiempo Real con ESP32
 
-A real-time EEG/neurofeedback prototype built on a Wemos Mini ESP32, MicroPython, Bluetooth UART, and an embedded web dashboard.
+Prototipo de adquisicion y visualizacion EEG en tiempo real construido con Wemos Mini ESP32, MicroPython, comunicacion Bluetooth UART y un dashboard web embebido.
 
-The system receives ThinkGear-compatible EEG packets from a BrainMind Wave Mobile 2 through an HC-05 Bluetooth serial module, parses the incoming stream on the ESP32, exposes live data as JSON, and serves a mobile-friendly dashboard over the local WiFi network.
+El sistema recibe paquetes EEG compatibles con ThinkGear desde un casco BrainMind Wave Mobile 2 mediante un modulo Bluetooth HC-05, procesa el flujo serial en el ESP32, expone los datos como JSON y sirve una interfaz web accesible desde un telefono movil en la misma red WiFi local.
 
-> This project is an embedded systems and neurofeedback engineering prototype. It is not a certified medical device and should not be used for clinical diagnosis without validation, calibration, and regulatory review.
-
----
-
-## Technical Description
-
-This project demonstrates a complete low-power EEG data path using only an ESP32 and MicroPython. The ESP32 acts as both the acquisition controller and the local web server:
-
-- Connects to a WiFi network in station mode.
-- Receives EEG packets over UART from an HC-05 Bluetooth module.
-- Parses ThinkGear/NeuroSky-style packets.
-- Validates frame checksum.
-- Extracts raw EEG samples from `0x80` packets.
-- Extracts EEG power bands from `0x83` packets when available.
-- Maintains a circular signal buffer.
-- Publishes live data through a `/data` JSON endpoint.
-- Serves an HTML/JavaScript dashboard directly from the ESP32.
-
-The main goal is to provide a portable, browser-based neurofeedback interface that can run on local hardware without a cloud backend, desktop software, or external server.
+> Este proyecto es un prototipo educativo y tecnico de sistemas embebidos, IoT y neurofeedback. No es un dispositivo medico certificado y no debe usarse para diagnostico clinico sin validacion, calibracion y revision regulatoria.
 
 ---
 
-## System Architecture
+## Descripcion Tecnica
 
-The data path is intentionally simple and local-first:
+Este proyecto implementa una ruta completa de datos EEG usando solo un ESP32 y MicroPython. El ESP32 funciona como controlador de adquisicion, parser de protocolo y servidor web local.
+
+El sistema:
+
+- Se conecta a una red WiFi en modo estacion.
+- Recibe datos EEG por UART desde un modulo HC-05.
+- Interpreta tramas compatibles con ThinkGear / NeuroSky.
+- Valida longitud de payload y checksum.
+- Extrae senal cruda desde paquetes `0x80`.
+- Extrae bandas EEG desde paquetes `0x83` cuando estan disponibles.
+- Mantiene un buffer circular de senal.
+- Publica datos en tiempo real mediante el endpoint `/data`.
+- Sirve un dashboard HTML/JavaScript directamente desde el ESP32.
+
+El objetivo es construir una plataforma portatil de neurofeedback local, sin depender de servicios cloud, software de escritorio ni servidores externos.
+
+---
+
+## Arquitectura del Sistema
+
+Flujo completo de datos:
 
 ```text
-┌──────────────────────────┐
-│ BrainMind Wave Mobile 2  │
-│ EEG headset              │
-└────────────┬─────────────┘
-             │ Bluetooth serial stream
-             ▼
-┌──────────────────────────┐
-│ HC-05 Bluetooth module   │
-│ Serial bridge            │
-└────────────┬─────────────┘
-             │ UART @ 57600 baud
-             │ TX -> ESP32 GPIO16 (RX)
-             │ RX -> ESP32 GPIO17 (TX)
-             ▼
-┌──────────────────────────┐
-│ Wemos Mini ESP32         │
-│ MicroPython runtime      │
-└────────────┬─────────────┘
-             │
-             ▼
-┌──────────────────────────┐
-│ ThinkGear Parser         │
-│ Header, payload, checksum│
-│ 0x80 raw, 0x83 power     │
-└────────────┬─────────────┘
-             │
-             ▼
-┌──────────────────────────┐
-│ EEG Processing Layer     │
-│ Circular buffer          │
-│ Visual scaling           │
-│ Runtime counters         │
-└────────────┬─────────────┘
-             │
-             ▼
-┌──────────────────────────┐
-│ Embedded HTTP Server     │
-│ /      -> dashboard      │
-│ /data  -> JSON stream    │
-└────────────┬─────────────┘
-             │ WiFi LAN
-             ▼
-┌──────────────────────────┐
-│ Smartphone Browser       │
-│ Mobile dashboard         │
-└──────────────────────────┘
++--------------------------+
+| BrainMind Wave Mobile 2  |
+| Casco EEG                |
++------------+-------------+
+             |
+             | Flujo Bluetooth serial
+             v
++--------------------------+
+| Modulo HC-05             |
+| Puente Bluetooth -> UART |
++------------+-------------+
+             |
+             | UART @ 57600 baud
+             | TX -> ESP32 GPIO16 (RX)
+             | RX -> ESP32 GPIO17 (TX)
+             v
++--------------------------+
+| Wemos Mini ESP32         |
+| MicroPython              |
++------------+-------------+
+             |
+             v
++--------------------------+
+| Parser ThinkGear         |
+| Cabecera, payload        |
+| checksum, 0x80, 0x83     |
++------------+-------------+
+             |
+             v
++--------------------------+
+| Procesamiento EEG        |
+| Buffer circular          |
+| Escalado visual          |
+| Metricas internas        |
++------------+-------------+
+             |
+             v
++--------------------------+
+| Servidor HTTP embebido   |
+| /      -> dashboard      |
+| /data  -> JSON           |
++------------+-------------+
+             |
+             | Red WiFi local
+             v
++--------------------------+
+| Navegador movil          |
+| Dashboard EEG            |
++--------------------------+
 ```
 
 ---
 
-## Hardware
+## Hardware Utilizado
 
-| Component | Function |
+| Componente | Funcion |
 | --- | --- |
-| Wemos Mini ESP32 | Main embedded controller, UART receiver, ThinkGear parser, WiFi web server |
-| HC-05 Bluetooth module | Bluetooth-to-UART serial bridge between the headset stream and the ESP32 |
-| BrainMind Wave Mobile 2 | EEG headset producing ThinkGear-compatible serial packets |
-| Smartphone client | Browser-based dashboard client connected to the same local WiFi network |
-| Local WiFi network | LAN transport between the ESP32 web server and the mobile dashboard |
+| Wemos Mini ESP32 | Controlador principal, receptor UART, parser ThinkGear y servidor web |
+| HC-05 | Puente Bluetooth a UART entre el casco y el ESP32 |
+| BrainMind Wave Mobile 2 | Casco EEG que transmite paquetes compatibles con ThinkGear |
+| Smartphone | Cliente web para visualizar el dashboard |
+| Red WiFi local | Comunicacion entre el ESP32 y el navegador del telefono |
 
-### UART Wiring
+### Conexion UART
 
-| HC-05 Pin | ESP32 Pin | Purpose |
+| HC-05 | ESP32 | Funcion |
 | --- | --- | --- |
-| TX | GPIO16 (RX) | EEG serial data into ESP32 |
-| RX | GPIO17 (TX) | Optional serial transmit path from ESP32 |
-| GND | GND | Shared reference |
-| VCC | Compatible supply | HC-05 power input |
+| TX | GPIO16 (RX) | Entrada serial EEG hacia el ESP32 |
+| RX | GPIO17 (TX) | Salida serial opcional desde el ESP32 |
+| GND | GND | Tierra comun |
+| VCC | Alimentacion compatible | Alimentacion del HC-05 |
 
-Default serial configuration:
+Configuracion serial por defecto:
 
 ```text
-UART:     UART1
-RX:       GPIO16
-TX:       GPIO17
-Baudrate: 57600
-Protocol: ThinkGear / NeuroSky-style packets
+UART:      UART1
+RX:        GPIO16
+TX:        GPIO17
+Baudrate:  57600
+Protocolo: ThinkGear / NeuroSky
 ```
 
 ---
 
-## Project Structure
+## Estructura del Proyecto
 
 ```text
 neurofeedback/
-├── main.py
-├── config.py
-├── wifi.py
-├── eeg_parser.py
-├── web_server.py
-├── dashboard.py
-└── README.md
+|-- main.py
+|-- config.py
+|-- wifi.py
+|-- eeg_parser.py
+|-- web_server.py
+|-- dashboard.py
+`-- README.md
 ```
 
 ### `main.py`
 
-Application entry point. It wires together the full runtime:
+Punto de entrada del sistema.
 
-- Loads configuration constants.
-- Connects to WiFi.
-- Initializes ESP32 UART.
-- Creates the `EEGParser`.
-- Creates the embedded `WebServer`.
-- Starts the main acquisition/server loop.
+Responsabilidades:
+
+- Cargar configuracion.
+- Conectar el ESP32 a WiFi.
+- Inicializar UART1 con los pines configurados.
+- Crear el parser EEG.
+- Crear el servidor web embebido.
+- Iniciar el bucle principal de adquisicion y servicio HTTP.
 
 ### `eeg_parser.py`
 
-ThinkGear packet parser and EEG data model.
+Parser ThinkGear y modelo de datos EEG.
 
-Responsibilities:
+Responsabilidades:
 
-- Maintains an internal receive buffer for partial UART reads.
-- Resynchronizes on the ThinkGear header `0xAA 0xAA`.
-- Validates payload length and checksum.
-- Parses raw wave packets (`0x80`) as signed 16-bit samples.
-- Parses ASIC EEG power packets (`0x83`) when present.
-- Maintains circular buffers for:
-  - `raw.Fp1`: visually scaled signal for the dashboard.
-  - `raw.Fp1Raw`: original signed raw values.
-- Tracks runtime counters such as `RawSamples`, `ValidFrames`, `BadChecksum`, and `EEGPowerFrames`.
-- Provides `get_json_data()` for the `/data` endpoint.
-
-The current implementation includes a temporary visual scaling path so the dashboard can show motion even when only raw `0x80` packets are present.
+- Mantener un buffer interno para lecturas UART parciales.
+- Resincronizar tramas usando la cabecera `0xAA 0xAA`.
+- Validar longitud de payload.
+- Validar checksum.
+- Decodificar paquetes raw wave `0x80` como enteros signed 16-bit.
+- Decodificar paquetes EEG power `0x83` cuando aparecen.
+- Mantener buffers circulares:
+  - `raw.Fp1`: senal escalada para el dashboard.
+  - `raw.Fp1Raw`: senal cruda real.
+- Generar actividad visual si solo llegan paquetes `0x80`.
+- Exponer `get_json_data()` para el endpoint `/data`.
 
 ### `web_server.py`
 
-Minimal embedded HTTP server for MicroPython.
+Servidor HTTP minimalista para MicroPython.
 
-Responsibilities:
+Responsabilidades:
 
-- Opens a TCP socket on the configured server port.
-- Uses socket timeouts so UART processing can continue.
-- Calls `parser.procesar()` in the main loop.
-- Serves:
-  - `/` as the HTML dashboard.
-  - `/data` as JSON.
-- Runs garbage collection during the loop to reduce memory pressure.
+- Abrir un socket TCP en el puerto configurado.
+- Atender solicitudes HTTP.
+- Llamar continuamente a `parser.procesar()`.
+- Servir:
+  - `/` como dashboard HTML.
+  - `/data` como JSON.
+- Ejecutar recoleccion de basura para reducir presion de memoria.
 
 ### `dashboard.py`
 
-Self-contained HTML, CSS, and JavaScript dashboard.
+Interfaz web embebida.
 
-Responsibilities:
+Responsabilidades:
 
-- Displays a patient/test control header.
-- Draws EEG power bars.
-- Renders a live frontal EEG trace on a canvas.
-- Polls `/data` periodically using `fetch()`.
-- Updates the matrix table and waveform display in the browser.
+- Definir el HTML, CSS y JavaScript del dashboard.
+- Mostrar boton de inicio/detencion de test.
+- Dibujar barras de potencia EEG.
+- Dibujar trazado EEG frontal en canvas.
+- Consultar `/data` periodicamente mediante `fetch()`.
+- Actualizar tabla, barras y grafica en tiempo real.
 
 ### `wifi.py`
 
-WiFi station-mode helper.
+Modulo de conectividad WiFi.
 
-Responsibilities:
+Responsabilidades:
 
-- Activates the ESP32 WiFi interface.
-- Connects to the configured SSID.
-- Waits until connected.
-- Prints the local dashboard URL.
+- Activar la interfaz WiFi del ESP32.
+- Conectar a la red configurada.
+- Esperar hasta obtener conexion.
+- Mostrar por consola la URL del dashboard.
 
 ### `config.py`
 
-Central configuration module.
+Modulo central de configuracion.
 
-Responsibilities:
+Responsabilidades:
 
-- WiFi credentials import.
-- UART ID, baudrate, RX/TX pins, and timeout.
-- HTTP server port and timeout.
-- EEG buffer size and maximum ThinkGear payload length.
+- Credenciales WiFi.
+- UART, baudrate, RX, TX y timeout.
+- Puerto y timeout del servidor web.
+- Tamano del buffer EEG.
+- Longitud maxima del payload ThinkGear.
 
-Recommended credential pattern:
+Patron recomendado para credenciales:
 
 ```python
 try:
@@ -213,53 +221,55 @@ except ImportError:
     PASSWORD = "TU_PASSWORD"
 ```
 
-Keep real credentials out of public repositories.
+No publiques credenciales reales en GitHub.
 
 ---
 
-## EEG Protocol
+## Protocolo EEG
 
-The project targets ThinkGear/NeuroSky-style serial packets.
+El proyecto procesa tramas compatibles con ThinkGear / NeuroSky.
 
-### Frame Format
+### Formato de Trama
 
 ```text
-0xAA 0xAA [payload_length] [payload bytes...] [checksum]
+0xAA 0xAA [payload_length] [payload] [checksum]
 ```
 
-### Header
+### Cabecera
 
-Each frame starts with two sync bytes:
+Cada trama comienza con:
 
 ```text
 AA AA
 ```
 
-The parser uses this marker to resynchronize when bytes are dropped, corrupted, or received mid-frame.
+El parser usa esta cabecera para sincronizarse de nuevo si recibe bytes parciales, basura serial o datos incompletos.
 
-### Payload Length
+### Payload
 
-The byte after the header defines the payload size. The parser rejects payloads larger than the configured `MAX_PAYLOAD_LENGTH`.
+El byte despues de la cabecera indica la longitud del payload.
+
+El parser rechaza paquetes con longitud mayor que `MAX_PAYLOAD_LENGTH`.
 
 ### Checksum
 
-Checksum is calculated as:
+El checksum se calcula asi:
 
 ```text
 checksum = 255 - (sum(payload) & 0xFF)
 ```
 
-If the received checksum does not match the calculated checksum, the frame is discarded and `BadChecksum` is incremented.
+Si el checksum recibido no coincide, la trama se descarta y aumenta el contador `BadChecksum`.
 
-### `0x80` Raw Wave
+### Paquete `0x80` Raw Wave
 
-Raw EEG packets use an extended ThinkGear code:
+Formato:
 
 ```text
 0x80 0x02 [high_byte] [low_byte]
 ```
 
-The two bytes are decoded as a signed 16-bit integer:
+Los dos bytes se interpretan como entero signed 16-bit:
 
 ```python
 value = (high_byte << 8) | low_byte
@@ -267,17 +277,27 @@ if value & 0x8000:
     value -= 0x10000
 ```
 
-The raw value is published as `raw.Fp1Raw`. A centered and scaled version is published as `raw.Fp1` for dashboard visualization.
+El valor real se publica en:
 
-### `0x83` EEG Power
+```text
+raw.Fp1Raw
+```
 
-EEG power packets use:
+La version escalada para visualizacion se publica en:
+
+```text
+raw.Fp1
+```
+
+### Paquete `0x83` EEG Power
+
+Formato:
 
 ```text
 0x83 0x18 [24 bytes]
 ```
 
-The 24-byte block contains eight unsigned 24-bit values:
+Contiene ocho valores unsigned de 24 bits:
 
 1. Delta
 2. Theta
@@ -288,30 +308,31 @@ The 24-byte block contains eight unsigned 24-bit values:
 7. Low Gamma
 8. High Gamma
 
-The parser exposes derived aggregate values:
+El parser publica tambien:
 
 - `Alpha = LowAlpha + HighAlpha`
 - `Beta = LowBeta + HighBeta`
 - `Gamma = LowGamma + HighGamma`
 
-When `0x83` packets are not present, the dashboard can still display raw activity derived from `0x80` packets for visual feedback.
+Si no llegan paquetes `0x83`, el sistema mantiene movimiento visual usando la actividad derivada de paquetes raw `0x80`.
 
 ---
 
-## Current Features
+## Caracteristicas Actuales
 
-- Real-time EEG packet acquisition over UART.
-- ThinkGear frame synchronization.
-- Payload length validation.
-- Checksum validation.
-- Raw wave decoding from `0x80` packets.
-- EEG power decoding from `0x83` packets when available.
-- Circular signal buffer.
-- JSON endpoint at `/data`.
-- Embedded dashboard served by the ESP32.
-- Mobile browser access over local WiFi.
-- Visual signal scaling for live feedback.
-- Runtime parser metrics:
+- Adquisicion EEG en tiempo real por UART.
+- Comunicacion Bluetooth mediante HC-05.
+- Parser ThinkGear con sincronizacion por cabecera.
+- Validacion de checksum.
+- Lectura robusta ante paquetes UART parciales.
+- Decodificacion de paquetes `0x80`.
+- Decodificacion de paquetes `0x83` cuando estan disponibles.
+- Buffer circular de senal.
+- Endpoint JSON `/data`.
+- Servidor web embebido en ESP32.
+- Dashboard movil por WiFi local.
+- Escalado visual temporal para senal raw.
+- Metricas internas:
   - `RawSamples`
   - `RawValue`
   - `ValidFrames`
@@ -320,31 +341,31 @@ When `0x83` packets are not present, the dashboard can still display raw activit
 
 ---
 
-## Installation
+## Instalacion Paso a Paso
 
-### 1. Install Thonny
+### 1. Instalar Thonny
 
-Download and install Thonny:
+Descarga Thonny:
 
 ```text
 https://thonny.org/
 ```
 
-Use Thonny as the MicroPython IDE and file transfer tool.
+Usa Thonny como IDE, consola REPL y herramienta para subir archivos al ESP32.
 
-### 2. Flash MicroPython on the ESP32
+### 2. Instalar MicroPython en el ESP32
 
-In Thonny:
+En Thonny:
 
-1. Connect the Wemos Mini ESP32 over USB.
-2. Open `Tools -> Options -> Interpreter`.
-3. Select a MicroPython ESP32 interpreter.
-4. Install or update MicroPython firmware if required.
-5. Confirm the REPL is available.
+1. Conecta el Wemos Mini ESP32 por USB.
+2. Abre `Tools -> Options -> Interpreter`.
+3. Selecciona MicroPython para ESP32.
+4. Instala o actualiza el firmware si hace falta.
+5. Confirma que puedes usar la consola REPL.
 
-### 3. Wire the HC-05 to the ESP32
+### 3. Conectar el HC-05
 
-Use the configured UART pins:
+Conexion esperada:
 
 ```text
 HC-05 TX -> ESP32 GPIO16 (RX)
@@ -352,22 +373,22 @@ HC-05 RX -> ESP32 GPIO17 (TX)
 GND      -> GND
 ```
 
-Confirm the HC-05 serial baudrate is set to `57600`.
+Verifica que el HC-05 este configurado a `57600` baud.
 
-### 4. Configure WiFi
+### 4. Configurar WiFi
 
-Recommended: create a `secrets.py` file on the ESP32:
+Opcion recomendada: crear `secrets.py` en el ESP32:
 
 ```python
-SSID = "your_wifi_name"
-PASSWORD = "your_wifi_password"
+SSID = "nombre_de_tu_wifi"
+PASSWORD = "password_de_tu_wifi"
 ```
 
-Keep `secrets.py` private and do not commit it to GitHub.
+`secrets.py` no debe subirse al repositorio.
 
-### 5. Upload Project Files
+### 5. Subir Archivos al ESP32
 
-Using Thonny, upload these files to the MicroPython device:
+Desde Thonny, subir al dispositivo MicroPython:
 
 ```text
 main.py
@@ -379,19 +400,19 @@ dashboard.py
 secrets.py
 ```
 
-Make sure files are saved to the device, not only opened from the PC.
+Asegurate de guardar en `MicroPython device`, no solo en el PC.
 
-### 6. Run the System
+### 6. Ejecutar
 
-In Thonny, run:
+En Thonny:
 
 ```python
 exec(open("main.py").read())
 ```
 
-Or open `main.py` and press Run.
+O abre `main.py` y pulsa Run.
 
-The console should print a URL similar to:
+Salida esperada:
 
 ```text
 Sistema QEEG Online listo en: http://10.254.0.45
@@ -400,27 +421,25 @@ Servidor web iniciado en puerto 80
 
 ---
 
-## Usage
+## Uso
 
-1. Power the EEG headset and HC-05 module.
-2. Confirm the Bluetooth serial link is active.
-3. Run `main.py` on the ESP32.
-4. Open the printed ESP32 IP address from a phone on the same WiFi network.
-5. Press `Iniciar Test`.
-6. Watch:
-   - EEG power bars.
-   - Signal matrix values.
-   - Live frontal trace.
+1. Enciende el casco EEG.
+2. Asegura que el HC-05 este conectado y recibiendo datos.
+3. Ejecuta `main.py` en el ESP32.
+4. Abre la IP impresa por consola desde un telefono en la misma red WiFi.
+5. Pulsa `Iniciar Test`.
+6. Observa:
+   - barras EEG,
+   - valores por banda,
+   - trazado frontal en tiempo real.
 
-### JSON Endpoint
-
-Open:
+### Endpoint JSON
 
 ```text
-http://<esp32-ip>/data
+http://<ip-del-esp32>/data
 ```
 
-Example fields:
+Ejemplo:
 
 ```json
 {
@@ -438,36 +457,39 @@ Example fields:
 }
 ```
 
-### Interpreting the Current Signal
+### Interpretacion Basica
 
-- `raw.Fp1Raw` is the raw signed value decoded from `0x80`.
-- `raw.Fp1` is a visually scaled version used by the dashboard.
-- `EEGPowerFrames > 0` means `0x83` power-band packets are being received.
-- `EEGPowerFrames = 0` with increasing `RawSamples` means the headset is currently sending raw wave packets, but not EEG power packets.
-- High `BadChecksum` values indicate serial corruption, baudrate mismatch, unstable Bluetooth serial data, or packet parsing issues.
+- `raw.Fp1Raw`: valor crudo signed 16-bit de paquetes `0x80`.
+- `raw.Fp1`: valor escalado para el canvas.
+- `RawSamples`: cantidad de muestras raw recibidas.
+- `ValidFrames`: tramas ThinkGear validas.
+- `BadChecksum`: tramas descartadas por checksum incorrecto.
+- `EEGPowerFrames`: paquetes `0x83` recibidos.
+
+Si `RawSamples` sube y `EEGPowerFrames` queda en cero, el casco esta transmitiendo senal raw, pero no paquetes de potencia EEG.
 
 ---
 
-## Troubleshooting
+## Solucion de Problemas
 
 ### `AttributeError: 'EEGParser' object has no attribute 'uart'`
 
-Cause: the constructor in `eeg_parser.py` is not named correctly on the ESP32.
+Causa: el constructor de `EEGParser` esta mal escrito en el archivo del ESP32.
 
-Correct:
+Correcto:
 
 ```python
 def __init__(self, uart, buffer_size=35, max_payload_length=169):
 ```
 
-Incorrect:
+Incorrecto:
 
 ```python
 def init(...)
 def _init_(...)
 ```
 
-Verify directly on the device:
+Verificacion en Thonny:
 
 ```python
 for i, line in enumerate(open("eeg_parser.py")):
@@ -475,87 +497,87 @@ for i, line in enumerate(open("eeg_parser.py")):
         print(i + 1, repr(line))
 ```
 
-### Dashboard Opens But Signal Is Flat
+### La Web Abre Pero No Se Mueve la Senal
 
-Check `/data`:
+Revisa `/data`:
 
-- If `RawSamples` increases, UART and parser are working.
-- If `raw.Fp1` stays near zero, adjust visual scaling in `eeg_parser.py`.
-- If `RawSamples` does not increase, verify Bluetooth/UART input.
+- Si `RawSamples` sube, UART y parser funcionan.
+- Si `raw.Fp1` esta plano, ajustar escalado visual en `eeg_parser.py`.
+- Si `RawSamples` no sube, revisar entrada Bluetooth/UART.
 
-### No Data Arrives From UART
+### No Llegan Datos UART
 
-Verify:
+Verifica:
 
-- HC-05 TX is connected to ESP32 GPIO16.
-- HC-05 RX is connected to ESP32 GPIO17.
-- GND is shared.
-- HC-05 baudrate is `57600`.
-- The headset is paired/connected and transmitting serial data.
+- HC-05 TX conectado a GPIO16.
+- HC-05 RX conectado a GPIO17.
+- GND comun.
+- Baudrate `57600`.
+- Casco encendido, emparejado y transmitiendo.
 
-### WiFi Does Not Connect
+### WiFi No Conecta
 
-Check:
+Verifica:
 
-- `SSID` and `PASSWORD`.
-- ESP32 is within range.
-- Phone and ESP32 are on the same local network.
-- `secrets.py` exists on the device if using private credentials.
+- SSID y password.
+- Alcance de red.
+- Que el telefono y el ESP32 esten en la misma red.
+- Que `secrets.py` exista si se usa configuracion privada.
 
-### Browser Cannot Open Dashboard
+### El Navegador No Abre el Dashboard
 
-Check:
+Verifica:
 
-- ESP32 printed an IP address.
-- Phone is connected to the same WiFi network.
-- Use `http://<esp32-ip>`, not `https://`.
-- Port is configured as `80`.
+- El ESP32 imprimio una IP.
+- Se esta usando `http://`, no `https://`.
+- El telefono esta en la misma red WiFi.
+- El servidor esta en puerto `80`.
 
-### High `BadChecksum`
+### `BadChecksum` Alto
 
-Possible causes:
+Posibles causas:
 
-- Serial noise.
-- Incorrect baudrate.
-- Bluetooth link instability.
-- Partial packet handling issue.
-- Power instability on HC-05 or ESP32.
-
----
-
-## Future Improvements
-
-Planned engineering directions:
-
-- Digital filters for raw EEG:
-  - DC removal
-  - notch filter
-  - band-pass filter
-- Real FFT-based spectral analysis on-device or in-browser.
-- Clinically meaningful band-power calculations.
-- Better smoothing and scaling for dashboard traces.
-- CSV export of raw and processed sessions.
-- Historical session storage.
-- Multi-channel abstractions.
-- Neurofeedback training modes.
-- Adaptive thresholds.
-- Event markers for blinking, jaw movement, and attention tasks.
-- Machine learning experiments for signal classification.
-- WebSocket or Server-Sent Events streaming instead of polling.
-- WiFi reconnection and startup timeout handling.
-- More robust socket lifecycle management.
+- Ruido serial.
+- Baudrate incorrecto.
+- Enlace Bluetooth inestable.
+- Alimentacion inestable.
+- Datos parciales o corrupcion en UART.
 
 ---
 
-## Credits
+## Mejoras Futuras
 
-Author:
+Ideas de evolucion tecnica:
+
+- Filtros digitales:
+  - remocion DC,
+  - filtro notch,
+  - filtro pasa banda.
+- FFT real en ESP32 o en navegador.
+- Calculo real de bandas EEG.
+- Escalado adaptativo del trazado.
+- Exportacion CSV.
+- Almacenamiento historico de sesiones.
+- Multiples canales.
+- Modos de entrenamiento neurofeedback.
+- Umbrales adaptativos.
+- Marcadores de eventos: parpadeo, cejas, mandibula, atencion.
+- Experimentos de machine learning.
+- Streaming con WebSocket o Server-Sent Events.
+- Reconexion WiFi automatica.
+- Manejo mas robusto de sockets.
+
+---
+
+## Creditos
+
+Autor:
 
 ```text
 Kevin Surribas
 ```
 
-Technical mentorship:
+Mentoria tecnica:
 
 ```text
 Gonzalo Surribas
@@ -563,8 +585,8 @@ Gonzalo Surribas
 
 ---
 
-## License
+## Licencia
 
 MIT License.
 
-This repository is intended for educational, research, and portfolio use. Any medical or clinical application requires proper validation, safety testing, and regulatory compliance.
+Este repositorio esta orientado a educacion, investigacion y portfolio tecnico. Cualquier uso medico o clinico requiere validacion, pruebas de seguridad y cumplimiento regulatorio.
