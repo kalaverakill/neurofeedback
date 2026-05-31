@@ -65,16 +65,16 @@ class EEGParser:
 
         while len(self.rx_buffer) >= 4:
             if self.rx_buffer[0] != 0xAA:
-                del self.rx_buffer[0]
+                self._drop_rx(1)
                 continue
 
             if self.rx_buffer[1] != 0xAA:
-                del self.rx_buffer[0]
+                self._drop_rx(1)
                 continue
 
             payload_len = self.rx_buffer[2]
             if payload_len > self.max_payload_length:
-                del self.rx_buffer[0]
+                self._drop_rx(1)
                 continue
 
             frame_len = 2 + 1 + payload_len + 1
@@ -83,7 +83,7 @@ class EEGParser:
 
             payload = self.rx_buffer[3:3 + payload_len]
             checksum = self.rx_buffer[3 + payload_len]
-            del self.rx_buffer[:frame_len]
+            self._drop_rx(frame_len)
 
             checksum_calculado = 255 - (sum(payload) & 0xFF)
             if checksum != checksum_calculado:
@@ -94,7 +94,10 @@ class EEGParser:
             self._extraer_payload(payload)
 
         if len(self.rx_buffer) > 512:
-            del self.rx_buffer[:-256]
+            self.rx_buffer = self.rx_buffer[-256:]
+
+    def _drop_rx(self, count):
+        self.rx_buffer = self.rx_buffer[count:]
 
     def _leer_24_bits(self, payload, offset):
         return (
