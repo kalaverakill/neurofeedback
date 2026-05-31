@@ -5,12 +5,12 @@ class EEGParser:
     Formato de trama:
     0xAA 0xAA [payload_length] [payload] [checksum]
 
-    El payload contiene codigos ThinkGear:
+    Codigos usados:
     - 0x02: poor signal, 1 byte
     - 0x04: attention, 1 byte
     - 0x05: meditation, 1 byte
-    - 0x80: raw wave, longitud 2, valor signed 16-bit
-    - 0x83: ASIC EEG power, longitud 24, ocho valores de 24 bits
+    - 0x80: raw wave, longitud 2, signed 16-bit
+    - 0x83: ASIC EEG power, longitud 24, ocho valores unsigned 24-bit
     """
 
     def __init__(self, uart, buffer_size=35, max_payload_length=169):
@@ -19,6 +19,9 @@ class EEGParser:
 
         self.rx_buffer = bytearray()
         self.raw_index = 0
+        self.raw_activity = 0
+        self.last_raw = 0
+        self.has_eeg_power = False
 
         self.data = {
             "Delta": 0,
@@ -33,20 +36,24 @@ class EEGParser:
             "PoorSignal": 200,
             "Attention": 0,
             "Meditation": 0,
+            "RawValue": 0,
+            "RawSamples": 0,
             "ValidFrames": 0,
-            "BadChecksum": 0
+            "BadChecksum": 0,
+            "EEGPowerFrames": 0
         }
 
         self.buffer = {
-            "Fp1": [0] * buffer_size
+            "Fp1": [0] * buffer_size,
+            "Fp1Raw": [0] * buffer_size
         }
 
     def procesar(self):
         """
-        Lee bytes disponibles de UART y procesa todas las tramas completas.
+        Lee bytes disponibles y procesa todas las tramas completas.
 
-        UART puede entregar una trama partida en varias lecturas. Por eso se
-        acumulan bytes en rx_buffer hasta tener una trama completa.
+        UART puede entregar una trama partida entre varias lecturas; por eso
+        se acumulan bytes antes de validar cabecera, longitud y checksum.
         """
         available = self.uart.any()
         if available:
@@ -64,7 +71,6 @@ class EEGParser:
                 continue
 
             payload_len = self.rx_buffer[2]
-
             if payload_len > self.max_payload_length:
                 del self.rx_buffer[0]
                 continue
@@ -101,13 +107,63 @@ class EEGParser:
             value -= 0x10000
         return value
 
+    def _raw_to_visual(self, value):
+        """
+        Escala raw signed 16-bit a un rango util para el canvas actual.
+        El valor raw real se conserva por separado en raw.Fp1Raw.
+        """
+        visual = value // 32
+        if visual > 120:
+            return 120
+        if visual < -120:
+            return -120
+        return visual
+
     def _append_raw(self, value):
-        self.buffer["Fp1"][self.raw_index] = value
+        self.last_raw = value
+        self.data["RawValue"] = value
+        self.data["RawSamples"] += 1
+
+        self.buffer["Fp1Raw"][self.raw_index] = value
+        self.buffer["Fp1"][self.raw_index] = self._raw_to_visual(value)
         self.raw_index = (self.raw_index + 1) % len(self.buffer["Fp1"])
+
+        amplitude = abs(value)
+        self.raw_activity = ((self.raw_activity * 7) + amplitude) // 8
+
+        if not self.has_eeg_power:
+            self._actualizar_bandas_desde_raw()
+
+    def _actualizar_bandas_desde_raw(self):
+        """
+        Genera actividad visual desde paquetes 0x80 cuando no llegan 0x83.
+
+        Esto no sustituye un calculo espectral QEEG real. Solo evita que el
+        dashboard quede en cero cuando el casco esta enviando raw wave.
+        """
+        level = self.raw_activity // 32
+        if level > 100:
+            level = 100
+
+        fast = abs(self.last_raw) // 64
+        if fast > 100:
+            fast = 100
+
+        self.data.update({
+            "Delta": level,
+            "Theta": (level * 3) // 4,
+            "LowAlpha": fast // 2,
+            "HighAlpha": fast // 2,
+            "Alpha": fast,
+            "LowBeta": fast // 3,
+            "HighBeta": fast // 3,
+            "Beta": (fast * 2) // 3,
+            "Gamma": fast // 4
+        })
 
     def _extraer_payload(self, payload):
         """
-        Extrae datos ThinkGear del payload usando formato TLV.
+        Extrae datos ThinkGear usando formato TLV dentro del payload.
         """
         i = 0
         length = len(payload)
@@ -151,6 +207,9 @@ class EEGParser:
                     self._append_raw(self._leer_raw_16_bits(data))
 
                 elif code == 0x83 and data_len == 24:
+                    self.has_eeg_power = True
+                    self.data["EEGPowerFrames"] += 1
+
                     delta = self._leer_24_bits(data, 0)
                     theta = self._leer_24_bits(data, 3)
                     low_alpha = self._leer_24_bits(data, 6)
@@ -177,18 +236,21 @@ class EEGParser:
                     return
                 i += 1
 
+    def _ordered_buffer(self, name):
+        values = self.buffer[name]
+        return values[self.raw_index:] + values[:self.raw_index]
+
     def get_json_data(self):
         """
         Devuelve datos listos para /data.
 
-        El buffer circular se reordena para que el navegador reciba la onda
-        temporal en orden cronologico.
+        raw.Fp1 es una senal escalada para el dashboard actual.
+        raw.Fp1Raw conserva los valores signed 16-bit reales del paquete 0x80.
         """
-        raw = self.buffer["Fp1"][self.raw_index:] + self.buffer["Fp1"][:self.raw_index]
-
         return {
             "raw": {
-                "Fp1": raw
+                "Fp1": self._ordered_buffer("Fp1"),
+                "Fp1Raw": self._ordered_buffer("Fp1Raw")
             },
             "fp1": self.data
         }
